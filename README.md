@@ -47,8 +47,8 @@ venv\Scripts\activate     # En Windows
 ### 3. Instalar Dependencias
 pip install -r requirements.txt
 
-📸 Pipeline de Procesamiento
-Paso 1: Captura o Carga de Imágenes
+### Pipeline de Procesamiento
+## Paso 1: Captura o Carga de Imágenes
 
 Cada estudiante debe tener al menos 10 imágenes de entrenamiento, almacenadas en:
 attendance/facenet/dataset/raw/Nombre_Estudiante/
@@ -58,4 +58,4 @@ attendance/facenet/dataset/raw/
     ├── Carlos/
     └── Lucía/
 
-Paso 2: Detección y Alineación Facial (MTCNN)
+## Paso 2: Detección y Alineación Facial (MTCNN)
