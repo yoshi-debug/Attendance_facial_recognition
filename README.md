@@ -14,25 +14,7 @@ La aplicación web fue construida con **Flask**, permitiendo una interfaz simple
 
 ## 🧩 Arquitectura del Proyecto
 
-root/
-│
-├── attendance/
-│ ├── facenet/
-│ │ ├── dataset/
-│ │ │ ├── raw/ # Imágenes originales de los estudiantes
-│ │ │ └── aligned/ # Rostros detectados y alineados
-│ │ ├── src/
-│ │ │ ├── align/ # Scripts para detección y alineación facial (MTCNN)
-│ │ │ ├── classifier.py # Entrenamiento SVM y embeddings (FaceNet)
-│ │ │ └── 20180402-114759/ # Modelo preentrenado FaceNet
-│ │ └── Reports/ # Carpeta de reportes Excel generados
-│ └── database/ # Base de datos SQLite
-│
-├── static/ # Archivos estáticos (CSS, JS, imágenes)
-├── templates/ # Vistas HTML (interfaz web Flask)
-├── run.py # Archivo principal de ejecución del servidor
-├── requirements.txt # Dependencias del proyecto
-└── README.md # Este archivo
+
 
 ---
 
