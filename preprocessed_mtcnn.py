@@ -1,63 +1,46 @@
-# preprocess_mtcnn.py
+# mtcnn_preprocess.py
 import os
 import cv2
-from mtcnn import MTCNN
 import numpy as np
+from mtcnn import MTCNN
+from PIL import Image
 
-# Crear detector MTCNN
 detector = MTCNN()
 
-# Directorios
-INPUT_DIR = "data/subjects"
-OUTPUT_DIR = "data/processed_faces"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+RAW_DIR = "data/raw_faces"
+PROCESSED_DIR = "data/processed_faces"
 
-def preprocess_and_save(image_path, output_path):
-    """Detecta, recorta, alinea y normaliza un rostro con MTCNN."""
-    img = cv2.imread(image_path)
-    if img is None:
-        print(f"No se pudo leer {image_path}")
-        return
+def align_face(image, left_eye, right_eye):
+    dx, dy = right_eye[0] - left_eye[0], right_eye[1] - left_eye[1]
+    angle = np.degrees(np.arctan2(dy, dx))
+    center = tuple(np.mean([left_eye, right_eye], axis=0).astype(int))
+    rot_mat = cv2.getRotationMatrix2D(center, angle, 1)
+    aligned = cv2.warpAffine(image, rot_mat, (image.shape[1], image.shape[0]))
+    return aligned
 
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    detections = detector.detect_faces(img_rgb)
+def preprocess_faces():
+    for person in os.listdir(RAW_DIR):
+        person_dir = os.path.join(RAW_DIR, person)
+        output_dir = os.path.join(PROCESSED_DIR, person)
+        os.makedirs(output_dir, exist_ok=True)
 
-    if len(detections) == 0:
-        print(f"No se detectó rostro en {image_path}")
-        return
+        for filename in os.listdir(person_dir):
+            path = os.path.join(person_dir, filename)
+            img = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+            detections = detector.detect_faces(img)
 
-    # Tomamos el rostro con mayor confianza
-    face = max(detections, key=lambda x: x['confidence'])
-    x, y, w, h = face['box']
+            if not detections:
+                continue
 
-    # Recortar el rostro
-    cropped_face = img_rgb[y:y+h, x:x+w]
+            for i, det in enumerate(detections):
+                x, y, w, h = det['box']
+                keypoints = det['keypoints']
+                face = img[y:y+h, x:x+w]
+                face = align_face(face, keypoints['left_eye'], keypoints['right_eye'])
+                face = Image.fromarray(face).resize((160, 160))
+                face.save(os.path.join(output_dir, f"{person}_{i}.jpg"))
 
-    # Redimensionar a 160x160
-    resized_face = cv2.resize(cropped_face, (160, 160))
-
-    # Normalizar [0,1]
-    normalized_face = resized_face / 255.0
-
-    # Guardar
-    output_dir = os.path.dirname(output_path)
-    os.makedirs(output_dir, exist_ok=True)
-    cv2.imwrite(output_path, cv2.cvtColor((normalized_face * 255).astype(np.uint8), cv2.COLOR_RGB2BGR))
-    print(f"Rostro procesado guardado en: {output_path}")
-
-def process_all_images():
-    """Procesa todas las imágenes de la carpeta de entrada."""
-    for subject_folder in os.listdir(INPUT_DIR):
-        subject_path = os.path.join(INPUT_DIR, subject_folder)
-        if not os.path.isdir(subject_path):
-            continue
-
-        for img_name in os.listdir(subject_path):
-            input_path = os.path.join(subject_path, img_name)
-            output_folder = os.path.join(OUTPUT_DIR, subject_folder)
-            output_path = os.path.join(output_folder, img_name)
-
-            preprocess_and_save(input_path, output_path)
+        print(f"✅ Procesadas imágenes para {person}")
 
 if __name__ == "__main__":
-    process_all_images()
+    preprocess_faces()
