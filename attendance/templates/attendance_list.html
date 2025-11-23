@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<h2 class="mt-4">Registro de Asistencias</h2>
+
+<table class="table table-striped mt-4">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Alumno</th>
+            <th>Registro</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in records %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.student.stuname }}</td>
+            <td>{{ r.timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

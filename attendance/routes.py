@@ -5,7 +5,7 @@ from __future__ import print_function
 from flask import render_template,url_for,flash,redirect,request,jsonify,abort,make_response
 from attendance import app, db, bcrypt
 from attendance.forms import RegistrationForm, LoginForm, AddForm, EditForm
-from attendance.models import User,Add
+from attendance.models import User, Class, Student, Attendance
 from flask_login import login_user, current_user, logout_user, login_required
 
 import os
@@ -73,22 +73,41 @@ def login():
 @app.route("/add", methods=['GET','POST'])
 @login_required
 def add():
-	form = AddForm()
-	if form.validate_on_submit():
-		new = Add(classname=form.classname.data, coordinator=form.coordinator.data, co_email=form.co_email.data, stuname=form.stuname_1.data, regno=form.regno_1.data, mobileno=form.mobileno_1.data)
-		db.session.add(new)
-		new = Add(stuname=form.stuname_2.data, regno=form.regno_2.data, mobileno=form.mobileno_2.data)
-		db.session.add(new)
-		new = Add(stuname=form.stuname_3.data, regno=form.regno_3.data, mobileno=form.mobileno_3.data)
-		db.session.add(new)		
-		new = Add(stuname=form.stuname_4.data, regno=form.regno_4.data, mobileno=form.mobileno_4.data)
-		db.session.add(new)
-		new = Add(stuname=form.stuname_5.data, regno=form.regno_5.data, mobileno=form.mobileno_5.data)						
-		db.session.add(new)
-		db.session.commit()
-		flash('A new class has been created!','success')
-		return redirect(url_for('home'))
-	return render_template('add.html',title='Adding Class',form=form)
+    form = AddForm()
+
+    if form.validate_on_submit():
+        # Crear la clase
+        new_class = Class(
+            classname=form.classname.data,
+            coordinator=form.coordinator.data,
+            co_email=form.co_email.data
+        )
+        db.session.add(new_class)
+        db.session.commit()  # Para obtener el new_class.id
+
+        # Procesar estudiantes dinámicos
+        for key in request.form:
+            if key.startswith("stuname_"):
+                num = key.split("_")[1]
+                stuname = request.form.get(f"stuname_{num}")
+                regno = request.form.get(f"regno_{num}")
+                mobileno = request.form.get(f"mobileno_{num}")
+
+                student = Student(
+                    stuname=stuname,
+                    regno=regno,
+                    mobileno=mobileno,
+                    class_id=new_class.id
+                )
+                db.session.add(student)
+
+        db.session.commit()
+        
+        flash("La clase y los estudiantes fueron guardados correctamente", "success")
+        return redirect(url_for("home"))
+
+    return render_template("add.html", title="Adding Class", form=form)
+
 
 @app.route("/edit",methods=['GET','POST'])
 @login_required
@@ -248,6 +267,8 @@ def face_recog():
 	flash('The students faces were recognized successfully!','success')
 	return render_template('take.html',title="Take Attendance")	                   
 
+
+
 @app.route("/mark", methods=['GET','POST'])
 def mark():
 	#workbook = xlsxwriter.Workbook('C:\\Users\\Dell\\Attendance\\Reports\\Report_for_'+ datetime.datetime.now().strftime("%Y_%m_%d-%H")+'.xlsx')
@@ -269,3 +290,126 @@ def mark():
 @app.route("/sms", methods=['GET','POST'])
 def sms():	
 	return render_template('take.html',title="Take Attendance")
+
+
+@app.route("/detect", methods=["POST"])
+def detect():
+    import base64
+    import io
+    from PIL import Image
+    import face_recognition
+
+    data = request.get_json()
+    image_data = data["image"].split(",")[1]
+    image_bytes = base64.b64decode(image_data)
+
+    image = Image.open(io.BytesIO(image_bytes))
+    img_array = np.array(image)
+
+    # Detectar rostros
+    locations = face_recognition.face_locations(img_array)
+
+    if len(locations) == 0:
+        return jsonify({"status": "no_face"})
+
+    # Encoding del rostro detectado
+    encoding = face_recognition.face_encodings(img_array, known_face_locations=locations)[0]
+
+    # Cargar tus estudiantes y comparar
+    students = Student.query.all()
+
+    known_encodings = []
+    known_ids = []
+
+    for s in students:
+        # Debes tener encodings guardados por estudiante
+        known_encodings.append(np.load(f"encodings/{s.id}.npy"))
+        known_ids.append(s.id)
+
+    matches = face_recognition.compare_faces(known_encodings, encoding, tolerance=0.45)
+
+    if True in matches:
+        idx = matches.index(True)
+        student_id = known_ids[idx]
+        student = Student.query.get(student_id)
+
+        # Registrar asistencia
+        record_attendance(student_id)
+
+        return jsonify({
+            "status": "ok",
+            "name": student.stuname
+        })
+
+    return jsonify({"status": "unknown"})
+
+
+@app.route("/attendance_mark", methods=["POST"])
+def attendance_mark():
+    from attendance.models import Student, Attendance
+    from datetime import datetime
+    import base64, cv2, numpy as np, face_recognition
+
+    data = request.get_json()
+    img_b64 = data["image"]
+
+    # Convertir base64 → imagen
+    header, encoded = img_b64.split(",", 1)
+    img_bytes = base64.b64decode(encoded)
+
+    npimg = np.frombuffer(img_bytes, np.uint8)
+    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+
+    # Extraer encoding de la cara detectada
+    unknown_enc = face_recognition.face_encodings(img)
+    if len(unknown_enc) == 0:
+        return jsonify({"status": "no_face"})
+
+    unknown = unknown_enc[0]
+
+    # Buscar coincidencias con estudiantes registrados
+    students = Student.query.all()
+
+    for stu in students:
+        if not stu.face_encoding:
+            continue
+
+        known = np.frombuffer(stu.face_encoding, dtype=np.float64)
+
+        match = face_recognition.compare_faces([known], unknown)[0]
+
+        if match:
+            # Registrar asistencia con timestamp
+            new_att = Attendance(
+                student_id=stu.id,
+                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+
+            db.session.add(new_att)
+            db.session.commit()
+
+            return jsonify({
+                "status": "ok",
+                "name": stu.stuname
+            })
+
+    return jsonify({"status": "unknown"})
+
+
+@app.route('/attendance_list')
+def attendance_list():
+    records = Attendance.query.order_by(Attendance.timestamp.desc()).all()
+    return render_template('attendance_list.html', records=records)
+
+
+
+def record_attendance(student_id):
+    today = datetime.date.today()
+
+    record = Attendance.query.filter_by(student_id=student_id, date=today).first()
+
+    if not record:
+        new_record = Attendance(student_id=student_id, date=today)
+        db.session.add(new_record)
+        db.session.commit()
+

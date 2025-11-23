@@ -1,62 +1,91 @@
 {% extends "layout.html" %}
 {% block content %}
-	<div class="row" style="margin-top: 150px;">
-		<form class="col-md-4" style="margin-top: 10px;">
-            <label for="input-file">Imagen</label>
-            <input type="file" id="recognize" accept="image/*">
- 		</form>
 
- 		<div class="col-md-4">
- 			<button class="btn btn-info btn-lg" id="recognize" type="submit">Reconocer Estudiantes</button>
- 		</div>
- 			
-		<div class="col-md-4">
-			<button class="btn btn-info btn-lg" id="mark" type="submit">Marcar Asistencia</button>
-		</div>
-	<!-- 
-		<div class="col-md-2">
-			<button class="btn btn-info btn-lg" id="sms" type="submit">Send SMS</button>
-        </div>	 -->			
+<h2 class="mt-5 text-center">Reconocimiento Facial</h2>
+
+<div class="row mt-4">
+    <div class="col-md-6 offset-md-3 text-center">
+        <video id="video" width="480" height="360" autoplay></video>
+        <canvas id="canvas" width="480" height="360" style="display:none;"></canvas>
+
+        <div class="mt-3">
+            <button id="btnAttend" class="btn btn-primary btn-lg">Registrar Asistencia</button>
+            <p id="status" class="mt-2"></p>
+        </div>
     </div>
+</div>
 
-    <script src="https://code.jquery.com/jquery-1.12.4.min.js"></script>   
-	<script type="text/javascript">
-		$("#recognize").click(function(){
-		    formdata = new FormData();      
-		    $('input[type="file"]').on("change", function() {
-		        var fileName = this.files[0];
-		        alert('The file "' + fileName +  '" has been selected.');
-		        if (formdata) {
-		            formdata.append("image", fileName);
-		            $.ajax({
-		                url: "{{ url_for('face_recog') }}",
-		                type: "POST",
-		                data: formdata,
-		                processData: false,
-		                contentType: false,
-		                async: false,
-		                success:function(){}
-		            });
-		        }                       
-		    }); 
+<script>
+let video = document.getElementById("video");
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
 
-		});
+navigator.mediaDevices.getUserMedia({ video: true })
+.then(stream => {
+    video.srcObject = stream;
+    video.play();
+})
+.catch(err => {
+    alert("No se pudo acceder a la cámara.");
+    console.log(err);
+});
 
-		// $("#mark").click(function(){  
-		//     $.ajax({
-		//     	dataType: 'json',
-		//     	type:'POST',
-		//     	url: "{{ url_for('mark') }}",
-		// });
-		// });
+// Enviar cada rostro detectado cada X milisegundos
+const SEND_INTERVAL = 1500;
 
-		$("#sms").click(function(){ 
-		    $.ajax({
-		    	dataType: 'json',
-		    	type:'POST',
-		    	url: "{{ url_for('sms') }}",
-		});
-		});				  
-    </script>	
+function sendFrame() {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    let dataURL = canvas.toDataURL("image/jpeg");
+
+    fetch("{{ url_for('detect') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataURL })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === "ok") {
+            console.log("Detectado:", data.name);
+        } else {
+            console.log("No detectado");
+        }
+    });
+
+    setTimeout(sendFrame, SEND_INTERVAL);
+}
+
+sendFrame();
+</script>
+
+<script>
+document.getElementById("btnAttend").addEventListener("click", () => {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    let dataURL = canvas.toDataURL("image/jpeg");
+
+    fetch("{{ url_for('attendance_mark') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataURL })
+    })
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("status").innerText = data.message;
+
+        if (data.success) {
+            document.getElementById("status").style.color = "green";
+        } else {
+            document.getElementById("status").style.color = "red";
+        }
+    })
+    .catch(err => {
+        document.getElementById("status").innerText = "Error al enviar la imagen.";
+        document.getElementById("status").style.color = "red";
+    });
+});
+</script>
+
+
+
+
+
 {% endblock content %}
-	
